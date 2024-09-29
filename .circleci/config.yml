@@ -1,0 +1,96 @@
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: "cimg/node:16.18.1"
+    steps:
+      - checkout
+      - run: mkdir -p $HOME/project/.ssh
+      - run: yarn install --network-concurrency 1
+  deploy-to-dev:
+    machine:
+      image: ubuntu-2204:2023.07.2
+    steps:
+      - run:
+          name: Pull latest code changes from VCS
+          command: |
+            ssh $SSH_USER@$SSH_HOST 'cd /home/ubuntu/wazobia/templates/kiamoni && /usr/bin/git checkout develop && /usr/bin/git pull'
+      - run:
+          name: Rebuild Image on the Server
+          command: |
+            ssh $SSH_USER@$SSH_HOST '/usr/bin/docker compose -f /home/ubuntu/wazobia/docker-compose.yml build --no-cache kiamoni-template'
+      - run:
+          name: Deploy built image
+          command: |
+            ssh $SSH_USER@$SSH_HOST '/usr/bin/docker compose -f /home/ubuntu/wazobia/docker-compose.yml up -d --force-recreate kiamoni-template'
+  deploy-to-qa:
+    machine:
+      image: ubuntu-2204:2023.07.2
+    steps:
+      - run:
+          name: Pull latest code changes from VCS
+          command: |
+            ssh $SSH_USER@$SSH_QA_HOST 'cd /home/ubuntu/wazobia/templates/kiamoni && /usr/bin/git checkout qa && /usr/bin/git pull'
+      - run:
+          name: Rebuild Image on the Server
+          command: |
+            ssh $SSH_USER@$SSH_QA_HOST '/usr/local/bin/docker-compose -f /home/ubuntu/wazobia/docker-compose.yml build --no-cache kiamoni-template'
+      - run:
+          name: Deploy built image
+          command: |
+            ssh $SSH_USER@$SSH_QA_HOST '/usr/local/bin/docker-compose -f /home/ubuntu/wazobia/docker-compose.yml up -d --force-recreate kiamoni-template'
+  deploy-to-master:
+    machine:
+      image: ubuntu-2204:2023.07.2
+    steps:
+      - run:
+          name: Pull latest code changes from VCS
+          command: |
+            ssh $SSH_USER@$SSH_MASTER_HOST 'cd /home/ubuntu/wazobia/templates/kiamoni && /usr/bin/git checkout master && /usr/bin/git pull'
+      - run:
+          name: Rebuild Image on the Server
+          command: |
+            ssh $SSH_USER@$SSH_MASTER_HOST '/usr/bin/docker compose -f /home/ubuntu/wazobia/docker-compose.yml build --no-cache kiamoni-template'
+      - run:
+          name: Deploy built image
+          command: |
+            ssh $SSH_USER@$SSH_MASTER_HOST '/usr/bin/docker compose -f /home/ubuntu/wazobia/docker-compose.yml up -d --force-recreate kiamoni-template'
+
+workflows:
+  deploy-develop:
+    jobs:
+      - build:
+          filters:
+            branches:
+              only: develop
+      - deploy-to-dev:
+          requires:
+            - build # only deploy once build job has completed
+          filters:
+            branches:
+              only: develop
+  deploy-qa:
+    jobs:
+      - build:
+          filters:
+            branches:
+              only: qa
+      - deploy-to-qa:
+          requires:
+            - build # only deploy once build job has completed
+          filters:
+            branches:
+              only: qa
+  deploy-master:
+    jobs:
+      - build:
+          filters:
+            branches:
+              only: master
+      - deploy-to-master:
+          requires:
+            - build # only deploy once build job has completed
+          filters:
+            branches:
+              only: master
